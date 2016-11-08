@@ -1,9 +1,10 @@
 {
-  "name": "@gfr/orm",
-  "version": "1.0.0",
+  "name": "gfr-orm",
+  "version": "0.0.1",
   "description": "",
   "main": "index.js",
   "scripts": {
+	"prepublish": "tsc",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "repository": {
@@ -15,5 +16,8 @@
   "bugs": {
     "url": "https://github.com/mxii/gfr-orm/issues"
   },
-  "homepage": "https://github.com/mxii/gfr-orm#readme"
+  "homepage": "https://github.com/mxii/gfr-orm#readme",
+  "devDependencies": {
+    "typescript": "2.0.2"
+  }
 }
