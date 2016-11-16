@@ -199,6 +199,16 @@ export class OrmBaseModel {
       return changes;
    }
 
+   private _detectDate = /(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})/;
+
+   //correctly parse dates from local storage
+   private _dateReviver = (key: string, value: any) => {
+      if (typeof value === 'string' && (this._detectDate.test(value))) {
+         return new Date(value);
+      }
+      return value;
+   }
+   
    private _import = (model: any, target: any): void => {
       const proto: OrmObject = Utils.getPrototype(this);
       if (!proto || !proto.COLUMNS) return console.log('mh?');
@@ -206,7 +216,7 @@ export class OrmBaseModel {
       const cols = proto.COLUMNS;
       for (var prop in cols) {
          if (cols.hasOwnProperty(prop)) {
-            target[prop] = model[prop];
+            target[prop] = this._dateReviver(prop, model[prop]);
          }
       }
    };
