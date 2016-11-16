@@ -228,6 +228,13 @@ export class OrmBaseModel {
       this._import(model, this._original);
    }
 
+   private getStringValue(obj: any): string {
+	   if (obj instanceof Date) {
+		   return (<Date>obj).toISOString();
+	   }
+	   return obj.toString ? obj.toString() : obj;
+   }
+   
    public export(withAutoInc?: boolean): any {
       const proto: OrmObject = Utils.getPrototype(this);
       if (!proto || !proto.COLUMNS) return;
@@ -236,7 +243,7 @@ export class OrmBaseModel {
       const cols = proto.COLUMNS;
       for (var prop in cols) {
          if (!cols[prop].options.auto_inc || withAutoInc === true) {
-            obj[prop] = (<any>this)[prop] && (<any>this)[prop].toString ? (<any>this)[prop].toString() : (<any>this)[prop]; // use EVERYTIME string values ..
+            obj[prop] = (<any>this)[prop] && this.getStringValue((<any>this)[prop]); // use EVERYTIME string values ..
          }
       }
 
