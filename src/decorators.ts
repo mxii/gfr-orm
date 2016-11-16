@@ -93,15 +93,6 @@ export class OrmBaseModel {
       return proto.TABLE;
    }
 
-   public constructor(model?: any) {
-      console.log('SUPER!', model);
-      if (model) {
-         //this.importCurrent(model);
-         //this.importOriginal(model);
-         this.import(model);
-      }
-   }
-
    public createGetUrlVariables(prefix?: string): string {
       const primKeys = this.getPrimaryKeysAndValues();
       let urlVars = prefix + (prefix && prefix[prefix.length - 1] === '/' ? '' : '/');
