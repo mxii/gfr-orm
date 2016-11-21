@@ -84,18 +84,34 @@ export interface IOrmBaseModel {
    new (model?: any): OrmBaseModel;
 }
 
-export class OrmBaseModel {
+const _detectDate = /(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})/;
 
-   private _original: any;
+//correctly parse dates from local storage
+const _dateReviver = (key: string, value: any) => {
+   if (typeof value === 'string' && (_detectDate.test(value))) {
+      return new Date(value);
+   }
+   return value;
+}
+
+export abstract class OrmBaseModel {
+
+   protected _original: any;
+
+   public abstract isValid(): boolean;
 
    public static Test() {
       const proto: OrmObject = Utils.getPrototype(this);
       return proto.TABLE;
    }
 
+   protected _getPrefix(prefix: string): string {
+      return prefix + (prefix && prefix[prefix.length - 1] === '/' ? '' : '/');
+   }
+
    public createGetUrlVariables(prefix?: string): string {
       const primKeys = this.getPrimaryKeysAndValues();
-      let urlVars = prefix + (prefix && prefix[prefix.length - 1] === '/' ? '' : '/');
+      let urlVars = this._getPrefix(prefix);
 
       for (var key in primKeys) {
          urlVars += ':' + key + '/';
@@ -106,7 +122,7 @@ export class OrmBaseModel {
 
    public createGetUrl(prefix?: string): string {
       const primKeys = this.getPrimaryKeysAndValues();
-      let urlVars = prefix + (prefix && prefix[prefix.length - 1] === '/' ? '' : '/');
+      let urlVars = this._getPrefix(prefix);
 
       for (var key in primKeys) {
          urlVars += primKeys[key] + '/';
@@ -124,26 +140,41 @@ export class OrmBaseModel {
       return this.constructor.name;
    }
 
-   private _getProperty(prop: string): any {
-      
+   protected _getProperty(prop: string): any {
+
    }
 
-   public getPrimaryKeysAndValues(useOriginalValues?: boolean): any {
-      const prims: any = {};
+   protected _getColumnName(cols: OrmColumns, col: string): string {
+      if (!cols || !col) return undefined;
+      return cols[col].col || col;
+   }
 
+   public getColumnNames(): string[] {
+      const proto: OrmObject = Utils.getPrototype(this);
+      if (!proto || !proto.COLUMNS) return [];
+
+      const columnNames = new Array<string>();
+      const cols = proto.COLUMNS;
+      Object.keys(cols).forEach(c => columnNames.push(this._getColumnName(cols, c)));
+
+      return columnNames;
+   }
+
+   public getPrimaryKeysAndValues(useOriginalValues?: boolean, useStringValues?: boolean): any {
+      const prims: any = {};
       const proto: OrmObject = Utils.getPrototype(this);
       if (!proto || !proto.COLUMNS) return false;
 
       const cols = proto.COLUMNS;
       for (var prop in cols) {
          if (cols.hasOwnProperty(prop)) {
-            if (cols[prop].options.primary_key) {
-               let colName = cols[prop].col || prop;
+            if (cols[prop].options && cols[prop].options.primary_key) {
+               let colName = this._getColumnName(cols, prop);
                if (useOriginalValues === true) {
-                  prims[colName] = this._original[prop];
+                  prims[colName] = useStringValues ? this.getStringValue(this._original[prop]) : this._original[prop];
                }
                else {
-                  prims[colName] = (<any>this)[prop];
+                  prims[colName] = useStringValues ? this.getStringValue((<any>this)[prop]) : (<any>this)[prop];
                }
             }
          }
@@ -161,7 +192,8 @@ export class OrmBaseModel {
       const cols = proto.COLUMNS;
       for (var prop in cols) {
          if (cols.hasOwnProperty(prop)) {
-            if ((<any>this)[prop] != this._original[prop]) {
+            //if ((<any>this)[prop] != this._original[prop]) {
+            if (this.getStringValue((<any>this)[prop]) != this.getStringValue(this._original[prop])) {
                return true;
             }
          }
@@ -181,8 +213,11 @@ export class OrmBaseModel {
       const cols = proto.COLUMNS;
       for (var prop in cols) {
          if (cols.hasOwnProperty(prop)) {
-            if ((<any>this)[prop] != this._original[prop]) {
-               changes[prop] = { cur: (<any>this)[prop], old: this._original[prop] };
+            if (this.getStringValue((<any>this)[prop]) != this.getStringValue(this._original[prop])) {
+               changes[prop] = {
+                  cur: this.getStringValue((<any>this)[prop]),
+                  old: this.getStringValue(this._original[prop])
+               };
             }
          }
       }
@@ -190,27 +225,18 @@ export class OrmBaseModel {
       return changes;
    }
 
-   private _detectDate = /(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})/;
-
-   //correctly parse dates from local storage
-   private _dateReviver = (key: string, value: any) => {
-      if (typeof value === 'string' && (this._detectDate.test(value))) {
-         return new Date(value);
-      }
-      return value;
-   }
-   
-   private _import = (model: any, target: any): void => {
+   protected _import(model: any, target: any): void {
       const proto: OrmObject = Utils.getPrototype(this);
       if (!proto || !proto.COLUMNS) return console.log('mh?');
 
       const cols = proto.COLUMNS;
       for (var prop in cols) {
+         const col = cols[prop];
          if (cols.hasOwnProperty(prop)) {
-            target[prop] = this._dateReviver(prop, model[prop]);
+            target[prop] = _dateReviver(prop, model.hasOwnProperty(col.col) ? model[col.col] : model[prop]);
          }
       }
-   };
+   }
 
    public import(model: OrmBaseModel) {
       if (!model) return;
@@ -229,13 +255,13 @@ export class OrmBaseModel {
       this._import(model, this._original);
    }
 
-   private getStringValue(obj: any): string {
-	   if (obj instanceof Date) {
-		   return (<Date>obj).toISOString();
-	   }
-	   return obj.toString ? obj.toString() : obj;
+   protected getStringValue(obj: any): string {
+      if (obj instanceof Date) {
+         return (<Date>obj).toISOString();
+      }
+      return typeof obj.toString === 'function' ? obj.toString().trim() : obj;
    }
-   
+
    public export(withAutoInc?: boolean): any {
       const proto: OrmObject = Utils.getPrototype(this);
       if (!proto || !proto.COLUMNS) return;
