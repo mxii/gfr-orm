@@ -41,7 +41,7 @@ export function Column(colName?: string | ColumnOptions, options?: ColumnOptions
          target.COLUMNS[propertyName] = { col: <string>colName, options: Object.assign({}, curOptions, options) };
       }
       else {
-         target.COLUMNS[propertyName] = { col: undefined, options: <ColumnOptions>colName };
+         target.COLUMNS[propertyName] = { col: undefined, options: Object.assign({}, curOptions, <ColumnOptions>colName) };
       }
    }
 }
