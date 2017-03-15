@@ -4,6 +4,7 @@ import { Utils } from './utils';
 export interface ColumnOptions {
    primary_key?: boolean;
    auto_inc?: boolean;
+   type?: string;
    [key: string]: any; // just to prevent ts-err-msg ! TS7017
 }
 
@@ -29,13 +30,15 @@ export interface OrmObject extends Object {
 // PROP DECORATOR
 export function Column(colName?: string | ColumnOptions, options?: ColumnOptions) {
    return function (target: OrmObject, propertyName: string) {
-
+      
       if (!target.COLUMNS) {
          target.COLUMNS = {};
       }
 
+      const curOptions = target.COLUMNS[propertyName] ? target.COLUMNS[propertyName].options : {};
+
       if (!colName || typeof colName === 'string') {
-         target.COLUMNS[propertyName] = { col: <string>colName, options: options || {} };
+         target.COLUMNS[propertyName] = { col: <string>colName, options: Object.assign({}, curOptions, options) };
       }
       else {
          target.COLUMNS[propertyName] = { col: undefined, options: <ColumnOptions>colName };
@@ -70,6 +73,21 @@ export function PrimaryKey() {
 export function AutoInc() {
    return function (target: OrmObject, propertyName: string) {
       setColumnOption(target, propertyName, 'auto_inc', true);
+   };
+}
+
+// PROP DECORATOR
+// Date ist ein geschützer begriff =/
+// export function Date() {
+//    return function (target: OrmObject, propertyName: string) {
+//       setColumnOption(target, propertyName, 'type', 'date');
+//    };
+// }
+
+// PROP DECORATOR
+export function Type(type: string) {
+   return function (target: OrmObject, propertyName: string) {
+      setColumnOption(target, propertyName, 'type', (type + '').toLowerCase());
    };
 }
 
@@ -160,7 +178,30 @@ export abstract class OrmBaseModel {
       return columnNames;
    }
 
-   public getPrimaryKeysAndValues(useOriginalValues?: boolean, useStringValues?: boolean): any {
+   private _checkTypeAndModifyValue(options: ColumnOptions, val: any): any {
+      if (!options || !options.type || typeof options.type !== 'string') return val;
+
+      if (options.type === 'date' && val instanceof Date) {
+         //val.setHours(0);
+         const offsetInHours = new Date().getTimezoneOffset() / 60;
+         val.setHours(offsetInHours * -1);
+         val.setMinutes(0);
+         val.setSeconds(0);
+         val.setMilliseconds(0);
+      }
+      else if (options.type === 'json' && typeof val === 'string') {
+         try {
+            const parsed = JSON.parse(val);
+            val = parsed;
+         } catch (error) {
+
+         }
+      }
+
+      return val;
+   }
+
+   public getPrimaryKeysAndValues(useOriginalValues: boolean = false, useStringValues?: boolean): any {
       const prims: any = {};
       const proto: OrmObject = Utils.getPrototype(this);
       if (!proto || !proto.COLUMNS) return false;
@@ -170,12 +211,18 @@ export abstract class OrmBaseModel {
          if (cols.hasOwnProperty(prop)) {
             if (cols[prop].options && cols[prop].options.primary_key) {
                let colName = this._getColumnName(cols, prop);
+               let val;
+
                if (useOriginalValues === true) {
-                  prims[colName] = useStringValues ? this.getStringValue(this._original[prop]) : this._original[prop];
+                  val = this._original[prop];
                }
                else {
-                  prims[colName] = useStringValues ? this.getStringValue((<any>this)[prop]) : (<any>this)[prop];
+                  val = (<any>this)[prop];
                }
+
+               val = this._checkTypeAndModifyValue(cols[prop].options, val);
+
+               prims[colName] = useStringValues ? this.getStringValue(val) : val;
             }
          }
       }
@@ -193,7 +240,13 @@ export abstract class OrmBaseModel {
       for (var prop in cols) {
          if (cols.hasOwnProperty(prop)) {
             //if ((<any>this)[prop] != this._original[prop]) {
-            if (this.getStringValue((<any>this)[prop]) != this.getStringValue(this._original[prop])) {
+            let curVal = (<any>this)[prop];
+            let oriVal = this._original[prop];
+
+            curVal = this._checkTypeAndModifyValue(cols[prop].options, curVal);
+            oriVal = this._checkTypeAndModifyValue(cols[prop].options, oriVal);
+
+            if (this.getStringValue(curVal) != this.getStringValue(oriVal)) {
                return true;
             }
          }
@@ -213,10 +266,16 @@ export abstract class OrmBaseModel {
       const cols = proto.COLUMNS;
       for (var prop in cols) {
          if (cols.hasOwnProperty(prop)) {
-            if (this.getStringValue((<any>this)[prop]) != this.getStringValue(this._original[prop])) {
+            let curVal = (<any>this)[prop];
+            let oriVal = this._original[prop];
+
+            curVal = this._checkTypeAndModifyValue(cols[prop].options, curVal);
+            oriVal = this._checkTypeAndModifyValue(cols[prop].options, oriVal);
+
+            if (this.getStringValue(curVal) != this.getStringValue(oriVal)) {
                changes[prop] = {
-                  cur: this.getStringValue((<any>this)[prop]),
-                  old: this.getStringValue(this._original[prop])
+                  cur: this.getStringValue(curVal),
+                  old: this.getStringValue(oriVal)
                };
             }
          }
@@ -233,7 +292,11 @@ export abstract class OrmBaseModel {
       for (var prop in cols) {
          const col = cols[prop];
          if (cols.hasOwnProperty(prop)) {
-            target[prop] = _dateReviver(prop, model.hasOwnProperty(col.col) ? model[col.col] : model[prop]);
+            let val = _dateReviver(prop, model.hasOwnProperty(col.col) ? model[col.col] : model[prop]);
+            
+            val = this._checkTypeAndModifyValue(cols[prop].options, val);
+
+            target[prop] = val;
          }
       }
    }
@@ -256,6 +319,7 @@ export abstract class OrmBaseModel {
    }
 
    protected getStringValue(obj: any): string {
+      if (obj === undefined || obj === null) return obj + '';
       if (obj instanceof Date) {
          return (<Date>obj).toISOString();
       }
@@ -270,11 +334,37 @@ export abstract class OrmBaseModel {
       const cols = proto.COLUMNS;
       for (var prop in cols) {
          if (!cols[prop].options.auto_inc || withAutoInc === true) {
-            obj[prop] = (<any>this)[prop] && this.getStringValue((<any>this)[prop]); // use EVERYTIME string values ..
+            let val = (<any>this)[prop];
+            val = this._checkTypeAndModifyValue(cols[prop].options, val);
+            obj[prop] = val && this.getStringValue(val); // use EVERYTIME string values ..
          }
       }
 
       return obj;
+   }
+
+   public generateWhereObject(columnNames: string[]) {
+      const proto: OrmObject = Utils.getPrototype(this);
+      if (!proto || !proto.COLUMNS) return {};
+
+      const cols = proto.COLUMNS;
+      const propNames = Object.keys(cols);
+      const whereObj = {};
+
+      columnNames.forEach(wProp => {
+         if (propNames.indexOf(wProp) < 0) {
+            console.log(wProp, 'not found');
+            return;
+         }
+         if (!cols[wProp].options) {
+            console.log(wProp, 'no options');
+            return;
+         }
+
+         whereObj[wProp] = this._checkTypeAndModifyValue(cols[wProp].options, this[wProp]);
+      });
+
+      return whereObj;
    }
 
 }
