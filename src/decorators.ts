@@ -5,6 +5,8 @@ export interface ColumnOptions {
    primary_key?: boolean;
    auto_inc?: boolean;
    type?: string;
+   default?: any;
+   ignore?: boolean;
    [key: string]: any; // just to prevent ts-err-msg ! TS7017
 }
 
@@ -30,7 +32,7 @@ export interface OrmObject extends Object {
 // PROP DECORATOR
 export function Column(colName?: string | ColumnOptions, options?: ColumnOptions) {
    return function (target: OrmObject, propertyName: string) {
-      
+
       if (!target.COLUMNS) {
          target.COLUMNS = {};
       }
@@ -85,9 +87,23 @@ export function AutoInc() {
 // }
 
 // PROP DECORATOR
+export function Ignore() {
+   return function (target: OrmObject, propertyName: string) {
+      setColumnOption(target, propertyName, 'ignore', true);
+   };
+}
+
+// PROP DECORATOR
 export function Type(type: string) {
    return function (target: OrmObject, propertyName: string) {
       setColumnOption(target, propertyName, 'type', (type + '').toLowerCase());
+   };
+}
+
+// PROP DECORATOR
+export function Default(defaultValue: any) {
+   return function (target: OrmObject, propertyName: string) {
+      setColumnOption(target, propertyName, 'default', defaultValue);
    };
 }
 
@@ -173,21 +189,27 @@ export abstract class OrmBaseModel {
 
       const columnNames = new Array<string>();
       const cols = proto.COLUMNS;
-      Object.keys(cols).forEach(c => columnNames.push(this._getColumnName(cols, c)));
+      Object
+         .keys(cols)
+         .filter(c => !cols[c].options.ignore)
+         .forEach(c => columnNames.push(this._getColumnName(cols, c)));
 
-      return columnNames;
+      return columnNames.filter(cn => cn);
    }
 
    private _checkTypeAndModifyValue(options: ColumnOptions, val: any): any {
       if (!options || !options.type || typeof options.type !== 'string') return val;
 
       if (options.type === 'date' && val instanceof Date) {
-         //val.setHours(0);
-         const offsetInHours = new Date().getTimezoneOffset() / 60;
-         val.setHours(offsetInHours * -1);
-         val.setMinutes(0);
-         val.setSeconds(0);
-         val.setMilliseconds(0);
+         // METHOD 1
+         // const offsetInHours = new Date().getTimezoneOffset() / 60;
+         // val.setHours(offsetInHours * -1);
+         // val.setMinutes(0);
+         // val.setSeconds(0);
+         // val.setMilliseconds(0);
+
+         // METHOD 2 --> untested !!
+         val = new Date(val.getFullYear(), val.getMonth(), val.getDate());
       }
       else if (options.type === 'json' && typeof val === 'string') {
          try {
@@ -196,6 +218,16 @@ export abstract class OrmBaseModel {
          } catch (error) {
 
          }
+      }
+      else if (options.type === 'number') {
+         val = +val;
+      }
+      else if (options.type === 'boolean') {
+         let bool = !!val;
+         if (val instanceof Buffer && val.length === 1) {
+            bool = !!val[0];
+         }
+         val = bool;
       }
 
       return val;
@@ -238,7 +270,7 @@ export abstract class OrmBaseModel {
 
       const cols = proto.COLUMNS;
       for (var prop in cols) {
-         if (cols.hasOwnProperty(prop)) {
+         if (cols.hasOwnProperty(prop) && !cols[prop].options.ignore) {
             //if ((<any>this)[prop] != this._original[prop]) {
             let curVal = (<any>this)[prop];
             let oriVal = this._original[prop];
@@ -265,7 +297,7 @@ export abstract class OrmBaseModel {
 
       const cols = proto.COLUMNS;
       for (var prop in cols) {
-         if (cols.hasOwnProperty(prop)) {
+         if (cols.hasOwnProperty(prop) && !cols[prop].options.ignore) {
             let curVal = (<any>this)[prop];
             let oriVal = this._original[prop];
 
@@ -284,38 +316,61 @@ export abstract class OrmBaseModel {
       return changes;
    }
 
-   protected _import(model: any, target: any): void {
+   protected _import(model: any, target: any, ignoreCase = false): void {
       const proto: OrmObject = Utils.getPrototype(this);
       if (!proto || !proto.COLUMNS) return console.log('mh?');
 
       const cols = proto.COLUMNS;
-      for (var prop in cols) {
+      Object.keys(cols).forEach(prop => {
          const col = cols[prop];
-         if (cols.hasOwnProperty(prop)) {
-            let val = _dateReviver(prop, model.hasOwnProperty(col.col) ? model[col.col] : model[prop]);
-            
-            val = this._checkTypeAndModifyValue(cols[prop].options, val);
+         let rawValue;
+         let modelPropertyName = col.col;
 
-            target[prop] = val;
+         if (!model.hasOwnProperty(modelPropertyName)) {
+            modelPropertyName = prop;
+            if (!model.hasOwnProperty(modelPropertyName)) {
+
+               if (!ignoreCase) return;
+
+               const foundModelKey = Object.keys(model).find(mk => mk.toLowerCase() == prop.toLowerCase());
+               if (!foundModelKey) return;
+               modelPropertyName = foundModelKey;
+            }
          }
-      }
+
+         //let val = _dateReviver(prop, model.hasOwnProperty(col.col) ? model[col.col] : model[prop]);
+         let val = _dateReviver(prop, model[modelPropertyName]);
+         val = this._checkTypeAndModifyValue(cols[prop].options, val);
+         target[prop] = val;
+      });
+
+      // for (var prop in cols) {
+      //    const col = cols[prop];
+      //    if (cols.hasOwnProperty(prop)) {
+      //       let val = _dateReviver(prop, model.hasOwnProperty(col.col) ? model[col.col] : model[prop]);
+
+      //       val = this._checkTypeAndModifyValue(cols[prop].options, val);
+
+      //       target[prop] = val;
+      //    }
+      // }
    }
 
-   public import(model: OrmBaseModel) {
+   public import(model: OrmBaseModel, ignoreCase = false) {
       if (!model) return;
-      this.importCurrent(model);
-      if (model._original) this.importOriginal(model._original);
+      this.importCurrent(model, ignoreCase);
+      if (model._original) this.importOriginal(model._original, ignoreCase);
    }
 
-   public importCurrent(model: any) {
-      this._import(model, this);
+   public importCurrent(model: any, ignoreCase = false) {
+      this._import(model, this, ignoreCase);
    }
 
-   public importOriginal(model: any) {
+   public importOriginal(model: any, ignoreCase = false) {
       if (!this._original) {
          this._original = {};
       }
-      this._import(model, this._original);
+      this._import(model, this._original, ignoreCase);
    }
 
    protected getStringValue(obj: any): string {
@@ -333,7 +388,7 @@ export abstract class OrmBaseModel {
       const obj: any = {};
       const cols = proto.COLUMNS;
       for (var prop in cols) {
-         if (!cols[prop].options.auto_inc || withAutoInc === true) {
+         if (!cols[prop].options.ignore && (!cols[prop].options.auto_inc || withAutoInc === true)) {
             let val = (<any>this)[prop];
             val = this._checkTypeAndModifyValue(cols[prop].options, val);
             obj[prop] = val && this.getStringValue(val); // use EVERYTIME string values ..
@@ -352,16 +407,21 @@ export abstract class OrmBaseModel {
       const whereObj = {};
 
       columnNames.forEach(wProp => {
-         if (propNames.indexOf(wProp) < 0) {
-            console.log(wProp, 'not found');
+         const colName = propNames.find(p => p.toLowerCase() == wProp.toLowerCase());
+         if (!colName) {
+            console.log(wProp, colName, 'not found');
             return;
          }
-         if (!cols[wProp].options) {
-            console.log(wProp, 'no options');
+         if (!cols[colName].options) {
+            console.log(wProp, colName, 'no options');
+            return;
+         }
+         if (!cols[colName].options.ignore) {
+            console.log(wProp, colName, 'ignore!');
             return;
          }
 
-         whereObj[wProp] = this._checkTypeAndModifyValue(cols[wProp].options, this[wProp]);
+         whereObj[colName] = this._checkTypeAndModifyValue(cols[colName].options, this[colName]);
       });
 
       return whereObj;
