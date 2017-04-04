@@ -194,22 +194,27 @@ export abstract class OrmBaseModel {
          .filter(c => !cols[c].options.ignore)
          .forEach(c => columnNames.push(this._getColumnName(cols, c)));
 
-      return columnNames.filter(cn => cn);
+      return columnNames.filter(cn => !!cn);
    }
 
    private _checkTypeAndModifyValue(options: ColumnOptions, val: any): any {
       if (!options || !options.type || typeof options.type !== 'string') return val;
 
-      if (options.type === 'date' && val instanceof Date) {
-         // METHOD 1
-         // const offsetInHours = new Date().getTimezoneOffset() / 60;
-         // val.setHours(offsetInHours * -1);
-         // val.setMinutes(0);
-         // val.setSeconds(0);
-         // val.setMilliseconds(0);
+      if (options.type === 'date') {
+         if (val instanceof Date) {
+            // METHOD 1
+            const offsetInHours = new Date().getTimezoneOffset() / 60;
+            val.setHours(offsetInHours * -1);
+            val.setMinutes(0);
+            val.setSeconds(0);
+            val.setMilliseconds(0);
 
-         // METHOD 2 --> untested !!
-         val = new Date(val.getFullYear(), val.getMonth(), val.getDate());
+            // METHOD 2 --> untested !! --> geht nicht?!?
+            //val = new Date(val.getFullYear(), val.getMonth(), val.getDate());
+         }
+         else if (typeof val === 'string' && val === '0000-00-00') {
+            val = null;
+         }
       }
       else if (options.type === 'json' && typeof val === 'string') {
          try {
@@ -224,7 +229,7 @@ export abstract class OrmBaseModel {
       }
       else if (options.type === 'boolean') {
          let bool = !!val;
-         if (val instanceof Buffer && val.length === 1) {
+         if (/*val instanceof Buffer &&*/ val.length === 1) {
             bool = !!val[0];
          }
          val = bool;
@@ -233,7 +238,7 @@ export abstract class OrmBaseModel {
       return val;
    }
 
-   public getPrimaryKeysAndValues(useOriginalValues: boolean = false, useStringValues?: boolean): any {
+   public getPrimaryKeysAndValues(useOriginalValues: boolean = false, useStringValues?: boolean, useOnlyAutoInc?: boolean): any {
       const prims: any = {};
       const proto: OrmObject = Utils.getPrototype(this);
       if (!proto || !proto.COLUMNS) return false;
@@ -241,7 +246,7 @@ export abstract class OrmBaseModel {
       const cols = proto.COLUMNS;
       for (var prop in cols) {
          if (cols.hasOwnProperty(prop)) {
-            if (cols[prop].options && cols[prop].options.primary_key) {
+            if (cols[prop].options && cols[prop].options.primary_key && (!useOnlyAutoInc || cols[prop].options.auto_inc)) {
                let colName = this._getColumnName(cols, prop);
                let val;
 
@@ -416,7 +421,7 @@ export abstract class OrmBaseModel {
             console.log(wProp, colName, 'no options');
             return;
          }
-         if (!cols[colName].options.ignore) {
+         if (cols[colName].options.ignore) {
             console.log(wProp, colName, 'ignore!');
             return;
          }
