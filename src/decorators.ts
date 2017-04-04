@@ -248,7 +248,7 @@ export abstract class OrmBaseModel {
          if (cols.hasOwnProperty(prop)) {
             if (cols[prop].options && cols[prop].options.primary_key && (!useOnlyAutoInc || cols[prop].options.auto_inc)) {
                let colName = this._getColumnName(cols, prop);
-               let val;
+               let val: any;
 
                if (useOriginalValues === true) {
                   val = this._original[prop];
@@ -328,7 +328,7 @@ export abstract class OrmBaseModel {
       const cols = proto.COLUMNS;
       Object.keys(cols).forEach(prop => {
          const col = cols[prop];
-         let rawValue;
+         let rawValue: any;
          let modelPropertyName = col.col;
 
          if (!model.hasOwnProperty(modelPropertyName)) {
@@ -412,7 +412,7 @@ export abstract class OrmBaseModel {
       const whereObj = {};
 
       columnNames.forEach(wProp => {
-         const colName = propNames.find(p => p.toLowerCase() == wProp.toLowerCase());
+         const colName: string = propNames.find(p => p.toLowerCase() == wProp.toLowerCase());
          if (!colName) {
             console.log(wProp, colName, 'not found');
             return;
