@@ -407,9 +407,9 @@ export abstract class OrmBaseModel {
       const proto: OrmObject = Utils.getPrototype(this);
       if (!proto || !proto.COLUMNS) return {};
 
-      const cols = proto.COLUMNS;
+      const cols: OrmColumns = proto.COLUMNS;
       const propNames = Object.keys(cols);
-      const whereObj = {};
+      const whereObj: any = {};
 
       columnNames.forEach(wProp => {
          const colName: string = propNames.find(p => p.toLowerCase() == wProp.toLowerCase());
@@ -426,7 +426,7 @@ export abstract class OrmBaseModel {
             return;
          }
 
-         whereObj[colName] = this._checkTypeAndModifyValue(cols[colName].options, this[colName]);
+         whereObj[colName] = this._checkTypeAndModifyValue(cols[colName].options, (<any>this)[colName]);
       });
 
       return whereObj;
